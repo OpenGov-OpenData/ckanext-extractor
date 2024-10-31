@@ -21,6 +21,7 @@ from __future__ import absolute_import, print_function, unicode_literals
 
 import datetime
 import tempfile
+import re
 
 from ckan.plugins import PluginImplementations
 from ckanext.extractor.interfaces import IExtractorRequest
@@ -28,6 +29,7 @@ from ckanext.extractor.interfaces import IExtractorRequest
 from ckan.common import config
 import pysolr
 from requests import Request, Session
+from six.moves.urllib.parse import quote_plus
 
 
 def download_and_extract(resource_url):
@@ -38,8 +40,24 @@ def download_and_extract(resource_url):
     """
     session = Session()
     request = Request('GET', resource_url).prepare()
+
+    solr_url = config.get('solr_url')
+    solr_user = config.get('solr_user')
+    solr_password = config.get('solr_password')
+    if solr_url and solr_user and solr_password:
+        # Rebuild the URL with the username/password
+        match = re.search('http(?:s)?://', solr_url)
+        assert match
+        protocol = match.group()
+        solr_url = re.sub(protocol, '', solr_url)
+        solr_url = "{}{}:{}@{}".format(protocol,
+                                       quote_plus(solr_user),
+                                       quote_plus(solr_password),
+                                       solr_url)
+
     for plugin in PluginImplementations(IExtractorRequest):
         request = plugin.extractor_before_request(request)
+
     with tempfile.NamedTemporaryFile() as f:
         r = session.send(request, stream=True)
         r.raise_for_status()
@@ -47,7 +65,7 @@ def download_and_extract(resource_url):
             f.write(chunk)
         f.flush()
         f.seek(0)
-        data = pysolr.Solr(config['solr_url']).extract(f, extractFormat='text')
+        data = pysolr.Solr(solr_url).extract(f, extractFormat='text')
     data['metadata']['fulltext'] = data['contents']
     return dict(clean_metadatum(*x) for x in data['metadata'].items())
 
@@ -63,4 +81,3 @@ def clean_metadatum(key, value):
         value = value[0]
     key = key.lower().replace('_', '-')
     return key, value
-
