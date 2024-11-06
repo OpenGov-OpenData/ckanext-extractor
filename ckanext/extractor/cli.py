@@ -98,7 +98,7 @@ def list():
 @click.argument(u'extract_id', required=False, nargs=-1)
 def show(extract_id):
     show = tk.get_action('extractor_show')
-    ids =_get_ids(True)
+    ids =_get_ids(extract_id)
     for i, id in enumerate(ids):
         try:
             result = show({}, {'id': id})
@@ -116,6 +116,3 @@ def show(extract_id):
             print('    {}: {!r}'.format(key, _compress(meta[key])))
         if i < len(ids) - 1:
             print('')
-
-
-
