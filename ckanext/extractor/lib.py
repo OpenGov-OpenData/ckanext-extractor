@@ -21,6 +21,7 @@ from __future__ import absolute_import, print_function, unicode_literals
 
 import datetime
 import tempfile
+import mimetypes
 import re
 
 from ckan.plugins import PluginImplementations
@@ -58,15 +59,24 @@ def download_and_extract(resource_url):
     for plugin in PluginImplementations(IExtractorRequest):
         request = plugin.extractor_before_request(request)
 
-    with tempfile.NamedTemporaryFile() as f:
+    r = session.send(request, stream=True)
+    r.raise_for_status()
+
+    content_type = r.headers.get('Content-Type')
+    extension = mimetypes.guess_extension(content_type) if content_type else '.tmp'
+
+    with tempfile.NamedTemporaryFile(suffix=extension) as f:
         r = session.send(request, stream=True)
         r.raise_for_status()
         for chunk in r.iter_content(chunk_size=1024):
             f.write(chunk)
         f.flush()
         f.seek(0)
-        data = pysolr.Solr(solr_url).extract(f, extractFormat='text')
-    data['metadata']['fulltext'] = data['contents']
+        data = pysolr.Solr(solr_url).extract(f, extractFormat='text', stream_type=content_type)
+    if data.get('contents') and data.get('contents') != 'None':
+        data['metadata']['fulltext'] = data.get('contents')
+    else:
+        data['metadata']['fulltext'] = data.get('file')
     return dict(clean_metadatum(*x) for x in data['metadata'].items())
 
 
